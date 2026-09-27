@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { FungusRecord, SporePrint } from '@/types'
 import GillAttachmentTag from './GillAttachmentTag.vue'
 import SporePrintSwatch from './SporePrintSwatch.vue'
+import { formatObservedAt, snapshotBrief } from '@/utils/habitat'
 
 const props = withDefaults(
   defineProps<{
@@ -51,12 +52,26 @@ const stipeRows = computed<Row[]>(() => [
   { label: '菌托', value: props.record.volva }
 ])
 
-const ecoRows = computed<Row[]>(() => [
-  { label: '气味', value: props.record.odor || '—' },
-  { label: '关联树种', value: props.record.hostTree || '—' },
-  { label: '子实体数量', value: `${props.record.fruitBodyCount} 个` },
-  { label: '采集日期', value: props.record.collectDate }
-])
+const ecoRows = computed<Row[]>(() => {
+  const rows: Row[] = [
+    { label: '气味', value: props.record.odor || '—' },
+    { label: '关联树种', value: props.record.hostTree || '—' },
+    { label: '子实体数量', value: `${props.record.fruitBodyCount} 个` },
+    { label: '采集日期', value: props.record.collectDate }
+  ]
+  const habitat = props.record.habitat
+  if (habitat) {
+    // 条目上固化的建条目时生境，事后不随观测台账变化
+    rows.push(
+      { label: '观测时间', value: formatObservedAt(habitat.observedAt) },
+      { label: '天气', value: habitat.weather },
+      { label: '温度', value: `${habitat.temperature} ℃` },
+      { label: '湿度', value: `${habitat.humidity} %RH` },
+      { label: '生境小结', value: snapshotBrief(habitat) }
+    )
+  }
+  return rows
+})
 
 const sections = computed(() => [
   { key: 'cap', title: '菌盖', rows: capRows.value },

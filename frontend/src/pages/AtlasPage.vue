@@ -23,13 +23,16 @@ import { recordStore } from '@/stores/recordStore'
 import { sporeStore } from '@/stores/sporeStore'
 import { pointStore } from '@/stores/pointStore'
 import { identifyStore } from '@/stores/identifyStore'
+import { habitatStore } from '@/stores/habitatStore'
 import { uid } from '@/utils/id'
+import { formatObservedAt, habitatBrief, recentObservations, snapshotBrief } from '@/utils/habitat'
 
 const router = useRouter()
 const recordState = useStore(recordStore)
 const sporeState = useStore(sporeStore)
 const pointState = useStore(pointStore)
 const identifyState = useStore(identifyStore)
+const habitatState = useStore(habitatStore)
 
 const filterAttachment = ref<GillAttachment | ''>('')
 const filterColor = ref<SporeColor | ''>('')
@@ -105,6 +108,8 @@ const form = reactive({
   code: '',
   tempName: '',
   pointId: '',
+  /** 建条目时选用的生境观测 ID（仅 6 小时窗口内的可选） */
+  observationId: '',
   fruitBodyCount: 1,
   capDiameter: 5,
   capShape: '平展' as FungusRecord['capShape'],
@@ -133,10 +138,23 @@ watch(
   { immediate: true }
 )
 
+/** 所选采集点 6 小时内的观测，默认选最近一次 */
+const recentObs = computed(() => recentObservations(habitatState.observations, form.pointId))
+
+watch(
+  () => [form.pointId, dialogVisible.value, habitatState.observations.length] as const,
+  () => {
+    if (!dialogVisible.value) return
+    const current = recentObs.value.find((item) => item.id === form.observationId)
+    form.observationId = current?.id ?? recentObs.value[0]?.id ?? ''
+  }
+)
+
 function openCreate(): void {
   form.code = `REC-${String(recordState.records.length + 1).padStart(3, '0')}`
   form.tempName = ''
   form.note = ''
+  form.observationId = recentObs.value[0]?.id ?? ''
   dialogVisible.value = true
 }
 
@@ -153,6 +171,10 @@ async function submit(): Promise<void> {
     ElMessage.warning(`采集编号「${form.code}」已存在，请换一个`)
     return
   }
+  // 固化所选观测的当时数值；事后观测被修改或撤销都不影响本条目
+  const chosen = form.observationId
+    ? habitatState.observations.find((item) => item.id === form.observationId) ?? null
+    : null
   const record: FungusRecord = {
     id: uid('rec'),
     code: form.code.trim(),
@@ -175,6 +197,15 @@ async function submit(): Promise<void> {
     hostTree: form.hostTree.trim(),
     collectDate: form.collectDate,
     collector: form.collector.trim(),
+    habitat: chosen
+      ? {
+          observationId: chosen.id,
+          observedAt: chosen.observedAt,
+          weather: chosen.weather,
+          temperature: chosen.temperature,
+          humidity: chosen.humidity
+        }
+      : null,
     note: form.note.trim()
   }
   await recordStore.getState().save(record)
@@ -249,6 +280,12 @@ async function removeRecord(record: FungusRecord): Promise<void> {
           <el-tag size="small" effect="plain">直径 {{ item.record.capDiameter }} cm</el-tag>
           <el-tag size="small" effect="plain">菌肉 {{ item.record.fleshReaction }}</el-tag>
         </div>
+        <div v-if="item.record.habitat" class="habitat-line">
+          <el-tag size="small" type="info" effect="plain">生境</el-tag>
+          <span class="muted">
+            {{ formatObservedAt(item.record.habitat.observedAt) }} · {{ snapshotBrief(item.record.habitat) }}
+          </span>
+        </div>
         <TraitsSummary :record="item.record" :spore="item.spore" :default-open="['gill']" class="traits" />
         <div class="ident-line">
           <template v-if="identifyOf(item.record.id)">
@@ -306,6 +343,24 @@ async function removeRecord(record: FungusRecord): Promise<void> {
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="生境观测">
+          <el-select
+            v-model="form.observationId"
+            style="width: 100%"
+            :placeholder="recentObs.length ? '选择当时的观测（默认最近一次）' : '该采集点 6 小时内没有观测，可先到采集点页登记'"
+            clearable
+          >
+            <el-option
+              v-for="obs in recentObs"
+              :key="obs.id"
+              :label="`${formatObservedAt(obs.observedAt)} · ${habitatBrief(obs)}`"
+              :value="obs.id"
+            />
+          </el-select>
+          <div class="obs-hint">
+            仅列出该采集点 6 小时内的观测；保存条目时会把当时的天气 / 温度 / 湿度固化到条目，之后观测被修改或撤销也不影响已建条目。
+          </div>
+        </el-form-item>
         <el-divider content-position="left">菌盖</el-divider>
         <el-row :gutter="12">
           <el-col :span="6">
@@ -453,6 +508,20 @@ async function removeRecord(record: FungusRecord): Promise<void> {
   flex-wrap: wrap;
   gap: 6px;
   margin: 10px 0;
+}
+.habitat-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.obs-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #7f8d82;
 }
 .traits {
   margin-bottom: 10px;

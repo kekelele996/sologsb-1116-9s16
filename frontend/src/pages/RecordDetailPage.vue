@@ -14,6 +14,7 @@ import { sporeStore } from '@/stores/sporeStore'
 import { pointStore } from '@/stores/pointStore'
 import { identifyStore } from '@/stores/identifyStore'
 import { sporeColorHex } from '@/utils/spore'
+import { formatObservedAt, snapshotBrief } from '@/utils/habitat'
 import { uid } from '@/utils/id'
 
 const route = useRoute()
@@ -117,6 +118,10 @@ async function removeSpore(): Promise<void> {
           {{ recordPointName }} · 采集日期
           {{ record.collectDate }} · 采集人 {{ record.collector || '—' }}
         </p>
+        <p v-if="record.habitat" class="habitat-sub">
+          生境（建条目时 {{ formatObservedAt(record.habitat.observedAt) }} 观测）：
+          {{ snapshotBrief(record.habitat) }}
+        </p>
       </div>
       <div v-else>
         <h2 class="page-title">条目详情</h2>
@@ -137,6 +142,9 @@ async function removeSpore(): Promise<void> {
           </div>
         </template>
         <TraitsSummary :record="record" :spore="spore" :default-open="['cap', 'flesh', 'gill', 'stipe', 'eco']" />
+        <p v-if="record.habitat" class="note">
+          生境数值为建条目时从采集点观测固化的当时值；观测事后被修改或撤销，本条目不随之变化。
+        </p>
         <p v-if="record.note" class="note">现场备注：{{ record.note }}</p>
       </el-card>
 
@@ -220,6 +228,11 @@ async function removeSpore(): Promise<void> {
 .head-actions {
   display: flex;
   gap: 8px;
+}
+.habitat-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #2f6f8f;
 }
 .block {
   border-radius: 12px;

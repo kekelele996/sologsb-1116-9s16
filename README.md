@@ -36,8 +36,7 @@ FRONTEND_PORT=21816
 | 状态管理 | Zustand（`zustand/vanilla` createStore + Vue 响应式桥接） |
 | 路由 | Vue Router 4（History 模式，nginx `try_files` 回落） |
 | 构建 | Vite 6 |
-| 本地存储 | IndexedDB（Dexie 封装，含 `schemaVersion` 与升级迁移） |
-| 部署 | 多阶段 Dockerfile：`node:20-alpine` 构建 → `nginx:alpine` 托管 |
+| 本地存储 | IndexedDB（Dexie 封装，含 `schemaVersion` 与升级迁移） || 部署 | 多阶段 Dockerfile：`node:20-alpine` 构建 → `nginx:alpine` 托管 |
 
 ## 三、本地开发
 
@@ -59,13 +58,13 @@ sologsb-1116/
 │   ├── nginx.conf              # try_files 前端路由回落 + gzip
 │   ├── public/favicon.svg
 │   └── src/
-│       ├── types/              # record.ts / spore.ts / point.ts / identify.ts / index.ts
-│       ├── stores/             # recordStore / sporeStore / pointStore / identifyStore（Zustand）
+│       ├── types/              # record.ts / spore.ts / point.ts / habitat.ts / identify.ts / index.ts
+│       ├── stores/             # recordStore / sporeStore / pointStore / habitatStore / identifyStore（Zustand）
 │       ├── components/common/  # SporePrintSwatch / TraitsSummary / GillAttachmentTag / GeoPointForm
-│       ├── hooks/              # usePersistentStore / useCandidateMatch
+│       ├── hooks/useCandidateMatch
 │       ├── pages/              # AtlasPage / RecordDetailPage / PointsPage / IdentifyPage / ComparePage
 │       ├── router/index.ts
-│       └── utils/              # spore.ts / export.ts / id.ts
+│       └── utils/              # spore.ts / habitat.ts / export.ts / id.ts
 ```
 
 ## 五、数据模型与存储
@@ -75,19 +74,21 @@ sologsb-1116/
 | FungusRecord 菌物条目 | 采集编号、暂定名、菌盖（直径/形状/边缘/质地）、菌肉厚度与变色反应、着生方式、菌褶密度、菌柄、菌环菌托、气味、关联树种 | `records` |
 | SporePrint 孢子印 | 印色、印形、获取时长、观察日期、样本干湿度 | `spores` |
 | CollectPoint 采集点 | 地点名、经纬度、海拔、植被类型、基物、伴生树种、日期、采集人 | `points` |
+| HabitatObservation 生境观测 | 所属采集点、观测时间、天气、温度、相对湿度（采集点台账，可增改撤） | `observations` |
 | IdentifyLog 鉴定结论 | 结论学名、依据、参考图鉴与页码、置信度、是否待复核、复核人 | `identifies` |
 
 - 数据库名 `gbfungiguide`，`meta` 表保存 `schemaVersion`；
 - `version(2)` 升级迁移会为历史条目补齐「菌肉变色反应」默认值（不变色）；
+- `version(3)` 新增生境观测台账表；`FungusRecord.habitat` 在新建条目时从同一采集点 6 小时内的观测中选取，并把当时的时间/天气/温度/湿度**快照固化**——观测事后被修改或撤销，已关联条目仍按原值显示；
 - 数据仅存于浏览器本地，容器无状态、不挂载命名卷。
 
 ## 六、主要页面
 
 | 路由 | 功能 |
 | --- | --- |
-| `/atlas` | 图谱总览：网格卡片展示菌盖形态要点、孢子印色块与鉴定状态，按印色/着生方式筛选并新建条目 |
-| `/atlas/:id` | 条目详情：形态描述分区折叠、孢子印观察登记、采集点编辑（含坐标校验）、鉴定留痕 |
-| `/points` | 采集点管理：经纬度格式校验、条目数与主要基物统计、删除前校验下级条目 |
+| `/atlas` | 图谱总览：网格卡片展示菌盖形态要点、生境快照、孢子印色块与鉴定状态，按印色/着生方式筛选并新建条目（从该采集点 6 小时内观测选取生境） |
+| `/atlas/:id` | 条目详情：形态描述分区折叠、孢子印观察登记、采集点编辑（含坐标校验）、鉴定留痕，生境按固化原值显示 |
+| `/points` | 采集点管理：经纬度格式校验、条目数与主要基物统计、删除前校验下级条目；生境观测台账登记与修改撤销，卡片显示最近一次观测 |
 | `/identify` | 鉴定工作页：左侧勾选形态特征与印色，右侧实时给出候选名录排序，确认后落鉴定结论 |
 | `/compare` | 条目对比：并排最多 3 条，逐项对照菌盖/菌褶菌管/孢子印差异并高亮 |
 

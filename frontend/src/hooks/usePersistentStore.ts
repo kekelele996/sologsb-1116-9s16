@@ -1,22 +1,23 @@
 import { onUnmounted, reactive } from 'vue'
 import type { StoreApi } from 'zustand/vanilla'
 import Dexie, { type Table } from 'dexie'
-import type { CollectPoint, FungusRecord, IdentifyLog, SporePrint } from '@/types'
+import type { CollectPoint, FungusRecord, HabitatObservation, IdentifyLog, SporePrint } from '@/types'
 
 /** IndexedDB 数据结构版本号 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRow {
   key: string
   value: number
 }
 
-/** Dexie 封装：条目 / 孢子印 / 采集点 / 鉴定结论 四张表 + 元数据表 */
+/** Dexie 封装：条目 / 孢子印 / 采集点 / 鉴定结论 / 生境观测 五张表 + 元数据表 */
 class FungiGuideDb extends Dexie {
   records!: Table<FungusRecord, string>
   spores!: Table<SporePrint, string>
   points!: Table<CollectPoint, string>
   identifies!: Table<IdentifyLog, string>
+  observations!: Table<HabitatObservation, string>
   meta!: Table<MetaRow, string>
 
   constructor() {
@@ -29,7 +30,7 @@ class FungiGuideDb extends Dexie {
       meta: 'key'
     })
     // v2：新增「菌肉变色反应」字段，迁移时为历史条目补齐默认值（不变色）
-    this.version(SCHEMA_VERSION)
+    this.version(2)
       .stores({
         records: 'id, code, pointId, attachment, capShape',
         spores: 'id, recordId, color, observeDate',
@@ -47,6 +48,15 @@ class FungiGuideDb extends Dexie {
             }
           })
       })
+    // v3：新增生境观测台账表；建条目时把所选观测的数值快照固化到 records.habitat
+    this.version(SCHEMA_VERSION).stores({
+      records: 'id, code, pointId, attachment, capShape',
+      spores: 'id, recordId, color, observeDate',
+      points: 'id, name, substrate, vegetation',
+      identifies: 'id, recordId, conclusion, date',
+      observations: 'id, pointId, observedAt, weather',
+      meta: 'key'
+    })
   }
 }
 
@@ -88,6 +98,10 @@ export async function seedDemoData(): Promise<void> {
   if (count > 0) return
 
   const today = new Date().toISOString().slice(0, 10)
+  /** 生成距当前若干小时前的 ISO 时间，保证示例观测落在 6 小时可选窗口附近 */
+  function hoursAgoIso(hours: number): string {
+    return new Date(Date.now() - hours * 3600_000).toISOString()
+  }
 
   await db.points.bulkPut([
     {
@@ -139,6 +153,13 @@ export async function seedDemoData(): Promise<void> {
       hostTree: '辽东栎',
       collectDate: today,
       collector: '沈禾',
+      habitat: {
+        observationId: 'obs_bhs_noon',
+        observedAt: hoursAgoIso(2),
+        weather: '晴',
+        temperature: 24,
+        humidity: 55
+      },
       note: '菌管层易剥离，仅作形态记录'
     },
     {
@@ -163,6 +184,14 @@ export async function seedDemoData(): Promise<void> {
       hostTree: '油松',
       collectDate: today,
       collector: '沈禾',
+      // 来源观测已撤销：条目仍按原快照值显示，不随台账变化
+      habitat: {
+        observationId: 'obs_bhs_morning',
+        observedAt: hoursAgoIso(8),
+        weather: '雾',
+        temperature: 16,
+        humidity: 88
+      },
       note: '菌褶边缘略带紫晕'
     },
     {
@@ -187,7 +216,41 @@ export async function seedDemoData(): Promise<void> {
       hostTree: '麻栎',
       collectDate: today,
       collector: '祁野',
+      habitat: {
+        observationId: 'obs_yls_noon',
+        observedAt: hoursAgoIso(1),
+        weather: '多云',
+        temperature: 27,
+        humidity: 71
+      },
       note: '生于倒木侧面，质地木栓化'
+    }
+  ])
+
+  await db.observations.bulkPut([
+    {
+      id: 'obs_bhs_noon',
+      pointId: 'pt_bhs',
+      observedAt: hoursAgoIso(2),
+      weather: '晴',
+      temperature: 24,
+      humidity: 55
+    },
+    {
+      id: 'obs_bhs_dusk',
+      pointId: 'pt_bhs',
+      observedAt: hoursAgoIso(5),
+      weather: '多云',
+      temperature: 21,
+      humidity: 68
+    },
+    {
+      id: 'obs_yls_noon',
+      pointId: 'pt_yls',
+      observedAt: hoursAgoIso(1),
+      weather: '多云',
+      temperature: 27,
+      humidity: 71
     }
   ])
 

@@ -1,3 +1,5 @@
+import type { HabitatSnapshot } from './habitat'
+
 /** 菌褶/菌管着生方式 */
 export const GILL_ATTACHMENTS = ['离生', '弯生', '直生', '延生'] as const
 export type GillAttachment = (typeof GILL_ATTACHMENTS)[number]
@@ -64,6 +66,8 @@ export interface FungusRecord {
   hostTree: string
   collectDate: string
   collector: string
+  /** 建条目时固化的生境观测值（温度/湿度/天气），事后不随观测改动 */
+  habitat: HabitatSnapshot | null
   /** 备注（不可作为食用依据） */
   note: string
 }
