@@ -54,6 +54,20 @@ const stipeRows = computed<Row[]>(() => [
 const ecoRows = computed<Row[]>(() => [
   { label: '气味', value: props.record.odor || '—' },
   { label: '关联树种', value: props.record.hostTree || '—' },
+  {
+    label: '观测天气',
+    value: props.record.habitat ? props.record.habitat.weather : '未关联观测'
+  },
+  {
+    label: '温度/湿度',
+    value: props.record.habitat
+      ? `${props.record.habitat.temperature} ℃ / ${props.record.habitat.humidity} %`
+      : '—'
+  },
+  {
+    label: '观测时间',
+    value: props.record.habitat ? props.record.habitat.observedAt.replace('T', ' ') : '—'
+  },
   { label: '子实体数量', value: `${props.record.fruitBodyCount} 个` },
   { label: '采集日期', value: props.record.collectDate }
 ])

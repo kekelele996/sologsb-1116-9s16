@@ -109,6 +109,11 @@ const diffRows = computed<DiffRow[]>(() => {
     build('气味', (record) => record.odor || '—'),
     build('关联树种', (record) => record.hostTree || '—'),
     build('采集点', (record) => pointName(record.pointId)),
+    build('观测时间', (record) => (record.habitat ? record.habitat.observedAt.replace('T', ' ') : '未关联')),
+    build('观测天气', (record) => record.habitat?.weather ?? '未关联'),
+    build('温度 / 湿度', (record) =>
+      record.habitat ? `${record.habitat.temperature} ℃ / ${record.habitat.humidity} %` : '未关联'
+    ),
     build('鉴定结论', (record) => conclusionOf(record.id))
   ]
 })

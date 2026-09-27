@@ -17,12 +17,15 @@ import {
 import GillAttachmentTag from '@/components/common/GillAttachmentTag.vue'
 import SporePrintSwatch from '@/components/common/SporePrintSwatch.vue'
 import TraitsSummary from '@/components/common/TraitsSummary.vue'
+import HabitatSnapshotView from '@/components/common/HabitatSnapshotView.vue'
 import { useStore } from '@/hooks/usePersistentStore'
 import { useCandidateMatch, EMPTY_CRITERIA, type MatchCriteria } from '@/hooks/useCandidateMatch'
 import { recordStore } from '@/stores/recordStore'
 import { sporeStore } from '@/stores/sporeStore'
 import { pointStore } from '@/stores/pointStore'
 import { identifyStore } from '@/stores/identifyStore'
+import { habitatStore } from '@/stores/habitatStore'
+import { observationsWithinWindow, toSnapshot } from '@/utils/habitat'
 import { uid } from '@/utils/id'
 
 const router = useRouter()
@@ -30,6 +33,7 @@ const recordState = useStore(recordStore)
 const sporeState = useStore(sporeStore)
 const pointState = useStore(pointStore)
 const identifyState = useStore(identifyStore)
+const habitatState = useStore(habitatStore)
 
 const filterAttachment = ref<GillAttachment | ''>('')
 const filterColor = ref<SporeColor | ''>('')
@@ -82,6 +86,11 @@ function identifyOf(recordId: string): { conclusion: string; confidence: string;
   return log ? { conclusion: log.conclusion, confidence: log.confidence, needReview: log.needReview } : null
 }
 
+/** 快照对应的当前台账观测（缺省说明已撤销），供卡片标注「按原值显示」 */
+function observationOf(observationId: string) {
+  return habitatState.observations.find((item) => item.id === observationId) ?? null
+}
+
 function toggleCompare(id: string): void {
   compareIds.value = compareIds.value.includes(id)
     ? compareIds.value.filter((item) => item !== id)
@@ -101,6 +110,8 @@ function goCompare(): void {
 
 /* ---------- 新建条目 ---------- */
 const dialogVisible = ref(false)
+/** 关联的生境观测 id；'' 表示不关联（仅当 6 小时窗口内确无观测时） */
+const selectedObservationId = ref<string>('')
 const form = reactive({
   code: '',
   tempName: '',
@@ -133,10 +144,27 @@ watch(
   { immediate: true }
 )
 
+/** 同一采集点 6 小时内的生境观测（最新在前） */
+const habitatCandidates = computed(() =>
+  observationsWithinWindow(habitatState.observations, form.pointId)
+)
+
+/** 切换采集点时默认勾选最近一次观测；打开对话框时也重置一次 */
+watch(
+  () => [form.pointId, habitatState.observations.length, dialogVisible.value] as const,
+  () => {
+    if (!dialogVisible.value) return
+    const exists = habitatCandidates.value.some((item) => item.id === selectedObservationId.value)
+    if (!exists) selectedObservationId.value = habitatCandidates.value[0]?.id ?? ''
+  },
+  { immediate: true }
+)
+
 function openCreate(): void {
   form.code = `REC-${String(recordState.records.length + 1).padStart(3, '0')}`
   form.tempName = ''
   form.note = ''
+  selectedObservationId.value = habitatCandidates.value[0]?.id ?? ''
   dialogVisible.value = true
 }
 
@@ -153,6 +181,9 @@ async function submit(): Promise<void> {
     ElMessage.warning(`采集编号「${form.code}」已存在，请换一个`)
     return
   }
+  const selectedObservation = selectedObservationId.value
+    ? habitatCandidates.value.find((item) => item.id === selectedObservationId.value) ?? null
+    : null
   const record: FungusRecord = {
     id: uid('rec'),
     code: form.code.trim(),
@@ -175,11 +206,16 @@ async function submit(): Promise<void> {
     hostTree: form.hostTree.trim(),
     collectDate: form.collectDate,
     collector: form.collector.trim(),
+    habitat: selectedObservation ? toSnapshot(selectedObservation) : null,
     note: form.note.trim()
   }
   await recordStore.getState().save(record)
   dialogVisible.value = false
-  ElMessage.success(`条目 ${record.code} 已建立`)
+  ElMessage.success(
+    selectedObservation
+      ? `条目 ${record.code} 已建立，已保存当时的生境观测数值`
+      : `条目 ${record.code} 已建立（未关联 6 小时内的生境观测）`
+  )
 }
 
 async function removeRecord(record: FungusRecord): Promise<void> {
@@ -249,6 +285,12 @@ async function removeRecord(record: FungusRecord): Promise<void> {
           <el-tag size="small" effect="plain">直径 {{ item.record.capDiameter }} cm</el-tag>
           <el-tag size="small" effect="plain">菌肉 {{ item.record.fleshReaction }}</el-tag>
         </div>
+        <HabitatSnapshotView
+          :habitat="item.record.habitat"
+          :current="item.record.habitat ? observationOf(item.record.habitat.observationId) : null"
+          compact
+          class="hab-card-line"
+        />
         <TraitsSummary :record="item.record" :spore="item.spore" :default-open="['gill']" class="traits" />
         <div class="ident-line">
           <template v-if="identifyOf(item.record.id)">
@@ -306,6 +348,22 @@ async function removeRecord(record: FungusRecord): Promise<void> {
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="生境观测">
+          <el-radio-group v-model="selectedObservationId" class="hab-radio">
+            <el-radio v-for="obs in habitatCandidates" :key="obs.id" :value="obs.id" class="hab-option">
+              <span class="hab-time">{{ obs.observedAt.replace('T', ' ') }}</span>
+              <el-tag size="small" effect="plain">{{ obs.weather }}</el-tag>
+              <el-tag size="small" effect="plain">{{ obs.temperature }} ℃</el-tag>
+              <el-tag size="small" effect="plain">湿度 {{ obs.humidity }}%</el-tag>
+              <span v-if="obs.note" class="hab-note">{{ obs.note }}</span>
+            </el-radio>
+            <el-radio value="" class="hab-option hab-none">不关联生境观测</el-radio>
+          </el-radio-group>
+          <p v-if="habitatCandidates.length === 0" class="hab-hint">
+            该采集点 6 小时内没有生境观测，可先到「采集点管理」补登后再建条目。
+          </p>
+          <p v-else class="hab-hint">仅列出同一采集点 6 小时内的观测；保存后复制当时的数值，事后观测修改或撤销不影响本条目。</p>
+        </el-form-item>
         <el-divider content-position="left">菌盖</el-divider>
         <el-row :gutter="12">
           <el-col :span="6">
@@ -467,5 +525,43 @@ async function removeRecord(record: FungusRecord): Promise<void> {
 .card-actions {
   display: flex;
   gap: 8px;
+}
+.hab-card-line {
+  margin: 0 0 10px;
+}
+.hab-radio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.hab-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 0;
+  height: auto;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #f6f8f5;
+}
+.hab-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #4b5b50;
+  white-space: nowrap;
+}
+.hab-note {
+  font-size: 12px;
+  color: #7f8d82;
+}
+.hab-none {
+  background: transparent;
+}
+.hab-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #8a97a3;
+  line-height: 1.6;
 }
 </style>

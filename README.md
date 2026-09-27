@@ -59,35 +59,38 @@ sologsb-1116/
 │   ├── nginx.conf              # try_files 前端路由回落 + gzip
 │   ├── public/favicon.svg
 │   └── src/
-│       ├── types/              # record.ts / spore.ts / point.ts / identify.ts / index.ts
-│       ├── stores/             # recordStore / sporeStore / pointStore / identifyStore（Zustand）
-│       ├── components/common/  # SporePrintSwatch / TraitsSummary / GillAttachmentTag / GeoPointForm
+│       ├── types/              # record.ts / spore.ts / point.ts / habitat.ts / identify.ts / index.ts
+│       ├── stores/             # recordStore / sporeStore / pointStore / habitatStore / identifyStore（Zustand）
+│       ├── components/common/  # SporePrintSwatch / TraitsSummary / GillAttachmentTag / GeoPointForm / HabitatLedger / HabitatSnapshotView
 │       ├── hooks/              # usePersistentStore / useCandidateMatch
 │       ├── pages/              # AtlasPage / RecordDetailPage / PointsPage / IdentifyPage / ComparePage
 │       ├── router/index.ts
-│       └── utils/              # spore.ts / export.ts / id.ts
+│       └── utils/              # spore.ts / habitat.ts / export.ts / id.ts
 ```
 
 ## 五、数据模型与存储
 
 | 模型 | 说明 | Dexie 表 |
 | --- | --- | --- |
-| FungusRecord 菌物条目 | 采集编号、暂定名、菌盖（直径/形状/边缘/质地）、菌肉厚度与变色反应、着生方式、菌褶密度、菌柄、菌环菌托、气味、关联树种 | `records` |
+| FungusRecord 菌物条目 | 采集编号、暂定名、菌盖（直径/形状/边缘/质地）、菌肉厚度与变色反应、着生方式、菌褶密度、菌柄、菌环菌托、气味、关联树种、**建条目时的生境快照** | `records` |
 | SporePrint 孢子印 | 印色、印形、获取时长、观察日期、样本干湿度 | `spores` |
 | CollectPoint 采集点 | 地点名、经纬度、海拔、植被类型、基物、伴生树种、日期、采集人 | `points` |
+| HabitatObservation 生境观测 | 采集点、观测时间、天气、温度、相对湿度、备注（生境观测台账） | `habitats` |
 | IdentifyLog 鉴定结论 | 结论学名、依据、参考图鉴与页码、置信度、是否待复核、复核人 | `identifies` |
 
 - 数据库名 `gbfungiguide`，`meta` 表保存 `schemaVersion`；
 - `version(2)` 升级迁移会为历史条目补齐「菌肉变色反应」默认值（不变色）；
+- `version(3)` 新增 `habitats` 生境观测表，并为历史条目补齐空生境快照（`habitat = null`）；
+- **生境快照留痕**：新建条目时只能从同一采集点 6 小时内的观测中选择，选定后把观测时间 / 天气 / 温度 / 湿度复制进条目；观测事后被修改或撤销，条目始终按快照原值显示（撤销或改过会在条目上标注「按原值显示」）；采集点卡片展示该点最近一次观测；
 - 数据仅存于浏览器本地，容器无状态、不挂载命名卷。
 
 ## 六、主要页面
 
 | 路由 | 功能 |
 | --- | --- |
-| `/atlas` | 图谱总览：网格卡片展示菌盖形态要点、孢子印色块与鉴定状态，按印色/着生方式筛选并新建条目 |
-| `/atlas/:id` | 条目详情：形态描述分区折叠、孢子印观察登记、采集点编辑（含坐标校验）、鉴定留痕 |
-| `/points` | 采集点管理：经纬度格式校验、条目数与主要基物统计、删除前校验下级条目 |
+| `/atlas` | 图谱总览：网格卡片展示菌盖形态要点、孢子印色块与生境快照、鉴定状态，按印色/着生方式筛选并新建条目（关联 6 小时内生境观测） |
+| `/atlas/:id` | 条目详情：形态描述分区折叠、孢子印观察登记、采集点编辑（含坐标校验）、生境观测留痕（原值不随后续修改变化）、鉴定留痕 |
+| `/points` | 采集点管理：经纬度格式校验、条目数与主要基物统计、卡片显示最近一次生境观测，生境观测台账支持登记/编辑/撤销，删除前校验下级条目 |
 | `/identify` | 鉴定工作页：左侧勾选形态特征与印色，右侧实时给出候选名录排序，确认后落鉴定结论 |
 | `/compare` | 条目对比：并排最多 3 条，逐项对照菌盖/菌褶菌管/孢子印差异并高亮 |
 

@@ -8,11 +8,13 @@ import GeoPointForm from '@/components/common/GeoPointForm.vue'
 import GillAttachmentTag from '@/components/common/GillAttachmentTag.vue'
 import SporePrintSwatch from '@/components/common/SporePrintSwatch.vue'
 import TraitsSummary from '@/components/common/TraitsSummary.vue'
+import HabitatSnapshotView from '@/components/common/HabitatSnapshotView.vue'
 import { useStore } from '@/hooks/usePersistentStore'
 import { recordStore } from '@/stores/recordStore'
 import { sporeStore } from '@/stores/sporeStore'
 import { pointStore } from '@/stores/pointStore'
 import { identifyStore } from '@/stores/identifyStore'
+import { habitatStore } from '@/stores/habitatStore'
 import { sporeColorHex } from '@/utils/spore'
 import { uid } from '@/utils/id'
 
@@ -22,6 +24,7 @@ const recordState = useStore(recordStore)
 const sporeState = useStore(sporeStore)
 const pointState = useStore(pointStore)
 const identifyState = useStore(identifyStore)
+const habitatState = useStore(habitatStore)
 
 const record = computed(() => recordState.records.find((item) => item.id === route.params.id) ?? null)
 const spore = computed(() => sporeState.spores.find((item) => item.recordId === record.value?.id) ?? null)
@@ -31,6 +34,13 @@ const recordPointName = computed(() => {
   const current = record.value
   if (!current) return '未关联'
   return pointState.points.find((item) => item.id === current.pointId)?.name ?? '未关联'
+})
+
+/** 快照对应的台账观测：用于核对观测事后是否被修改或撤销（数值仍以快照为准） */
+const linkedObservation = computed(() => {
+  const snapshot = record.value?.habitat
+  if (!snapshot) return null
+  return habitatState.observations.find((item) => item.id === snapshot.observationId) ?? null
 })
 
 const sporeForm = reactive({
@@ -192,6 +202,14 @@ async function removeSpore(): Promise<void> {
       </el-card>
 
       <el-card shadow="never" class="block">
+        <template #header>生境观测留痕（建条目时的天气 / 温湿度原值）</template>
+        <HabitatSnapshotView :habitat="record.habitat" :current="linkedObservation" />
+        <p class="habitat-note">
+          数值在建立条目时从同采集点 6 小时内的观测复制；事后观测被修改或撤销，这里仍显示当时原值。
+        </p>
+      </el-card>
+
+      <el-card shadow="never" class="block">
         <template #header>鉴定留痕（{{ logs.length }} 条）</template>
         <el-table :data="logs" border stripe>
           <el-table-column prop="date" label="日期" width="120" />
@@ -238,6 +256,12 @@ async function removeSpore(): Promise<void> {
   background: #f7f5f0;
   font-size: 12px;
   color: #6f7d72;
+}
+.habitat-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #8a97a3;
+  line-height: 1.6;
 }
 .spore-body {
   display: flex;

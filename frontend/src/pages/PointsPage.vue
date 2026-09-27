@@ -3,13 +3,26 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { CollectPoint } from '@/types'
 import GeoPointForm from '@/components/common/GeoPointForm.vue'
+import HabitatLedger from '@/components/common/HabitatLedger.vue'
 import { useStore } from '@/hooks/usePersistentStore'
 import { pointStore } from '@/stores/pointStore'
 import { recordStore } from '@/stores/recordStore'
+import { habitatStore } from '@/stores/habitatStore'
+import { latestObservationOf } from '@/utils/habitat'
 import { uid } from '@/utils/id'
 
 const pointState = useStore(pointStore)
 const recordState = useStore(recordStore)
+const habitatState = useStore(habitatStore)
+
+/** 当前打开生境台账的采集点 */
+const ledgerPoint = ref<CollectPoint | null>(null)
+const ledgerVisible = computed<boolean>({
+  get: () => ledgerPoint.value !== null,
+  set: (visible) => {
+    if (!visible) ledgerPoint.value = null
+  }
+})
 
 const editingId = ref<string | null>(null)
 const draft = reactive<CollectPoint>({
@@ -86,6 +99,19 @@ function recordsOf(pointId: string): number {
   return recordState.records.filter((record) => record.pointId === pointId).length
 }
 
+function observationsOf(pointId: string): number {
+  return habitatState.observations.filter((item) => item.pointId === pointId).length
+}
+
+/** 采集点卡片展示最近一次生境观测 */
+function latestOf(pointId: string) {
+  return latestObservationOf(habitatState.observations, pointId)
+}
+
+function openLedger(point: CollectPoint): void {
+  ledgerPoint.value = point
+}
+
 /** 主要基物：该采集点下条目最常见的基物（采集点自身基物优先） */
 function mainSubstrate(point: CollectPoint): string {
   const list = recordState.records.filter((record) => record.pointId === point.id)
@@ -99,8 +125,10 @@ async function remove(point: CollectPoint): Promise<void> {
     ElMessage.error(`「${point.name}」下仍有 ${count} 条菌物条目，请先清理条目`)
     return
   }
-  await ElMessageBox.confirm(`确认删除采集点「${point.name}」？`, '删除确认', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除采集点「${point.name}」？其生境观测台账将一并删除`, '删除确认', { type: 'warning' })
+  await habitatStore.getState().removeByPoint(point.id)
   await pointStore.getState().remove(point.id)
+  if (ledgerPoint.value?.id === point.id) ledgerPoint.value = null
   ElMessage.success('采集点已删除')
 }
 </script>
@@ -144,13 +172,36 @@ async function remove(point: CollectPoint): Promise<void> {
           <el-descriptions-item label="采集日期">{{ point.collectDate }}</el-descriptions-item>
           <el-descriptions-item label="采集人">{{ point.collector || '—' }}</el-descriptions-item>
         </el-descriptions>
+        <div class="habitat-strip" :class="{ empty: !latestOf(point.id) }">
+          <template v-if="latestOf(point.id)">
+            <div class="habitat-line">
+              <span class="habitat-label">最近观测</span>
+              <span class="habitat-time">{{ latestOf(point.id)?.observedAt.replace('T', ' ') }}</span>
+            </div>
+            <div class="habitat-line">
+              <el-tag size="small" effect="plain">{{ latestOf(point.id)?.weather }}</el-tag>
+              <el-tag size="small" effect="plain">{{ latestOf(point.id)?.temperature }} ℃</el-tag>
+              <el-tag size="small" effect="plain">湿度 {{ latestOf(point.id)?.humidity }}%</el-tag>
+              <span class="muted habitat-count">共 {{ observationsOf(point.id) }} 条观测</span>
+            </div>
+          </template>
+          <span v-else class="muted">尚无生境观测，新条目将无法关联 6 小时内的现场天气与温湿度</span>
+        </div>
         <div class="point-actions">
           <el-button size="small" @click="edit(point)">编辑</el-button>
+          <el-button size="small" type="primary" plain @click="openLedger(point)">生境观测台账</el-button>
           <el-button size="small" type="danger" plain @click="remove(point)">删除</el-button>
         </div>
       </el-card>
       <el-empty v-if="pointState.points.length === 0" description="暂无采集点" />
     </div>
+
+    <HabitatLedger
+      v-if="ledgerPoint"
+      v-model="ledgerVisible"
+      :point-id="ledgerPoint.id"
+      :point-name="ledgerPoint.name"
+    />
   </div>
 </template>
 
@@ -181,5 +232,37 @@ async function remove(point: CollectPoint): Promise<void> {
 .point-actions {
   display: flex;
   gap: 8px;
+}
+.habitat-strip {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f3f8f4;
+  border: 1px solid #dcece1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.habitat-strip.empty {
+  background: #f7f5f0;
+  border-color: #ece4d6;
+}
+.habitat-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.habitat-label {
+  font-weight: 600;
+  color: #3c5a46;
+}
+.habitat-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #4b5b50;
+}
+.habitat-count {
+  margin-left: auto;
 }
 </style>
